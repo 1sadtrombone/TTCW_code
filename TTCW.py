@@ -183,9 +183,6 @@ def TwoTone(VNA_fi, VNA_ff, npts, readout_powers, avg_cnt, baseline_avg_cnt, IFB
 				dataRe[i,h] += r
 				dataIm[i,h] += im
 
-			dataRe /= avg_cnt
-			dataIm /= avg_cnt 
-
 		vnaAux.disable()
 
 		for j in range(baseline_avg_cnt):
@@ -195,8 +192,11 @@ def TwoTone(VNA_fi, VNA_ff, npts, readout_powers, avg_cnt, baseline_avg_cnt, IFB
 			baselineRe[h] += r
 			baselineIm[h] += im
 
-		baselineRe /= baseline_avg_cnt
-		baselineIm /= baseline_avg_cnt
+	baselineRe /= baseline_avg_cnt
+	baselineIm /= baseline_avg_cnt
+
+	dataRe /= avg_cnt
+	dataIm /= avg_cnt 
 
 	twpa.disconnectAll()
 	four_port.set(1,95)
