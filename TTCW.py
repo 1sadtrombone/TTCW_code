@@ -94,7 +94,7 @@ def ScanAuxAtOneReadoutFreq(readout_f, avg_cnt, readout_power, aux_power, aux_fi
 	plt.plot(aux_fs,data[:,0].T)
 	plt.show()
 
-def TwoTone(VNA_fi, VNA_ff, npts, readout_powers, avg_cnt, baseline_avg_cnt, IFBW, aux_fi, aux_ff, aux_npts, aux_power, twpa_freq, twpa_power, twpa_atten, aux_port=2, aux_atten=10, readout_atten=10):
+def TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW, aux_power, twpa_freq, twpa_power, twpa_atten, aux_port=2, aux_atten=10, readout_atten=10):
 	"""
 	The measurement of S43 as a func of readout frequency, qubit freq, and readout power.
 	some sample values below.
@@ -121,8 +121,6 @@ def TwoTone(VNA_fi, VNA_ff, npts, readout_powers, avg_cnt, baseline_avg_cnt, IFB
 
 	vna_format = 'polar'
 
-	aux_fs = np.linspace(aux_fi, aux_ff, aux_npts)
-
 	# set up TWPA
 	client = Labber.connectToServer('localhost', timeout=30)
 
@@ -142,9 +140,6 @@ def TwoTone(VNA_fi, VNA_ff, npts, readout_powers, avg_cnt, baseline_avg_cnt, IFB
 	# set up VNA 
 
 	vna = VNA.VNA()
-	vna.setStartFreq(VNA_fi)
-	vna.setStopFreq(VNA_ff)
-	vna.setNPoints(npts)
 
 	vna.setIFBW(IFBW)
 
@@ -160,48 +155,48 @@ def TwoTone(VNA_fi, VNA_ff, npts, readout_powers, avg_cnt, baseline_avg_cnt, IFB
 
 	vnaAux.enable()
 
-	dataRe = np.zeros((aux_fs.size,readout_powers.size,npts))
-	dataIm = np.zeros((aux_fs.size,readout_powers.size,npts))
+	dataRe = np.zeros((aux_fs.size,readout_powers.size,readout_fs.size))
+	dataIm = np.zeros((aux_fs.size,readout_powers.size,readout_fs.size))
 
-
-	baselineRe = np.zeros((readout_powers.size,npts))
-	baselineIm = np.zeros((readout_powers.size,npts))
+	baselineRe = np.zeros((readout_powers.size,readout_fs.size))
+	baselineIm = np.zeros((readout_powers.size,readout_fs.size))
 
 	for h,p in enumerate(readout_powers):
-		print(f"Readout power: {p}")
 		vna.setPower(p)
+
 		vnaAux.enable()
+		vna.setNPoints(avg_cnt)
+
 		for i,aux_f in enumerate(aux_fs):
-			print(f"Qubit freq: {aux_f}")
 			vnaAux.setCWFreq(aux_f)
 
-			for j in range(avg_cnt):
-				if j%(avg_cnt//10) == 0:
-					print(j)
+			for j,read_f in enumerate(readout_fs):
+				print(f"(Superloop {h+1} of {readout_powers.size}) Qubit freq: {aux_f}, Readout power: {p}, Readout freq: {read_f}")
+				vna.setStartFreq(read_f)
+				vna.setStopFreq(read_f)
 
 				f,r,im = vna.getData()
-				dataRe[i,h] += r
-				dataIm[i,h] += im
+				dataRe[i,h,j] += np.mean(r)
+				dataIm[i,h,j] += np.mean(im)
 
 		vnaAux.disable()
+		vna.setNPoints(baseline_avg_cnt)
 
-		for j in range(baseline_avg_cnt):
-			if j%(baseline_avg_cnt//10) == 0:
-				print(j)
+		print("Taking Baselines...")
+		for j,read_f in enumerate(readout_fs):
+			print(f"(Baselines for superloop {h+1} of {readout_powers.size}) Readout power: {p}, Readout freq: {read_f}")
+			vna.setStartFreq(read_f)
+			vna.setStopFreq(read_f)
+			
 			f,r,im = vna.getData()
-			baselineRe[h] += r
-			baselineIm[h] += im
-
-	baselineRe /= baseline_avg_cnt
-	baselineIm /= baseline_avg_cnt
-
-	dataRe /= avg_cnt
-	dataIm /= avg_cnt 
+			baselineRe[h,j] += np.mean(r)
+			baselineIm[h,j] += np.mean(im)
 
 	twpa.disconnectAll()
 	four_port.set(1,95)
 	four_port.set(2,95)
 	vna.setRFOff()
+
 
 	vna.setIntTrigger()
 
@@ -212,6 +207,8 @@ def TwoTone(VNA_fi, VNA_ff, npts, readout_powers, avg_cnt, baseline_avg_cnt, IFB
 	np.save("TTCW_scan_results_manypowers_Phase", dataIm)
 	np.save("TTCW_scan_baseline_manypowers_Mag", baselineRe)
 	np.save("TTCW_scan_baseline_manypowers_Phase", baselineIm)
+
+	print("Data saved. Run finished successfully.")
 	
 
 	#plt.imshow(dataRe[:,:,0]-baselineRe[:,0], extent=extent, interpolation='none', aspect='auto')
@@ -292,10 +289,20 @@ def TwoToneBaselineOnly(VNA_fi, VNA_ff, npts, IFBW, readout_power, baseline_avg_
 	np.save("TTCW_scan_real_baseline_Mag", baselineRe)
 	np.save("TTCW_scan_real_baseline_Phase", baselineIm)
 
+fqi = 4.5e9
+fqf = 4.8e9
+fqn = 91
+fqs = np.linspace(fqi, fqf, fqn)
+
 pi = -55
 pf = -15
 pn = 13
 ps = np.linspace(pi,pf,pn)
 
-#TwoTone(VNA_fi, VNA_ff, npts, readout_powers, avg_cnt, baseline_avg_cnt, IFBW, aux_fi, aux_ff, aux_npts, aux_power, twpa_freq, twpa_power, twpa_atten, aux_port=2, aux_atten=10, readout_atten=10)
-TwoTone(5.82833e9, 5.82848e9, 5, ps, 100, 1000, 1e3, 4.5e9, 4.8e9, 43, -25, 9.2e9, 0, 7, aux_port=2, aux_atten=10, readout_atten=20)
+fri = 5.82826e9
+frf = 5.82848e9
+frn = 7
+frs = np.linspace(fri, frf, frn)
+
+#TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW, aux_power, twpa_freq, twpa_power, twpa_atten, aux_port=2, aux_atten=10, readout_atten=10)
+TwoTone(frs, ps, fqs, 100, 1000, 1e3, -25, 9.2e9, 0, 7, aux_port=2, aux_atten=10, readout_atten=20)
