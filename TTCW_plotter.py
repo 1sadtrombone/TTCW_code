@@ -31,6 +31,7 @@ plt.xlabel("Readout Frequency (GHz)")
 plt.plot(np.linspace(VNA_fi,VNA_ff,bl_linmag.size), bl_linmag)
 plt.show()
 exit()
+
 '''
 
 ps = np.linspace(-55,-15,13)
