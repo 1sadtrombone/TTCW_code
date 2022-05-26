@@ -7,6 +7,11 @@ import Labber
 import TWPA
 import Attenuator
 import VNA
+
+import os
+import time
+import json
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -110,30 +115,35 @@ def ScanAuxAtOneReadoutFreq(readout_f, avg_cnt, readout_power, aux_power, aux_fi
 	plt.plot(aux_fs,data[:,0].T)
 	plt.show()
 
-def TwoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_avg_cnt, IFBW, twpa_freq, twpa_power, twpa_atten, data_dir, tag, aux_port=2, aux_atten=10, readout_atten=10):
+def twoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_avg_cnt, IFBW, twpa_freq, twpa_power, twpa_atten, data_dir, tag, aux_port=2, aux_atten=10, readout_atten=20, plot=True):
 	"""
-	The measurement of S43 as a func of readout frequency, qubit freq, and readout power.
-	some sample values below.
-	
-	twpa_freq = 9.2e9
-	twpa_power = 0
-	twpa_atten = 7
-
-	VNA_fi = 5.82645e9
-	VNA_ff = 5.82945e9
-	npts = 501
-
-	IFBW = 1e3
-
-	readout_power = -50 # dBm
-	avg_cnt = 100
-	baseline_avg_cnt = 1000
-
-	aux_power = -25
-	aux_fi = 4.6e9
-	aux_ff = 4.7e9
-	aux_npts = 501
+	The measurement of S43 as a func of readout frequency, readout power, qubit freq, and qubit power.
+	output: saves .npy files to data_dir, as well as a json of the parameters for the run (the args to this function)
+	The indices of the main result are [fr, pr, fq, pq]
+	The indices of the baseline scan are [fr, pr]
+	(the baseline is a higher avg count scan with qubit pump off)
 	"""
+
+	if not os.path.exists(data_dir):
+		print("making savedir")
+		os.makedirs(data_dir)
+
+	paramset = {
+		"frs":list(readout_fs),
+		"prs":list(readout_powers),
+		"fqs":list(aux_fs),
+		"pqs":list(aux_powers),
+		"avg_cnt":avg_cnt,
+		"bl_avg_cnt":baseline_avg_cnt,
+		"IFBW":IFBW,
+		"twpa_f":twpa_freq,
+		"twpa_netp":twpa_power-twpa_atten,
+		"aux_atten":aux_atten,
+		"readout_atten":readout_atten
+	}
+
+	with open(f"{data_dir}\\{tag}_metadata.json", "w") as paramfile:
+		json.dump(paramset, paramfile)
 
 	vna_format = 'polar'
 
@@ -169,52 +179,70 @@ def TwoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_av
 	vnaAux = VNA.VNAAux()
 	vnaAux.setPort(aux_port)
 
-	vnaAux.enable()
+	# see (approximately) how long it's going to take to do this
 
-	dataRe = np.zeros((aux_fs.size,readout_powers.size,readout_fs.size))
-	dataIm = np.zeros((aux_fs.size,readout_powers.size,readout_fs.size))
+	begin = time.time()
+	vna.setNPoints(avg_cnt)
+	vna.setPower(readout_powers[0])
+	vnaAux.setPower(aux_powers[0])
+	vnaAux.setCWFreq(aux_fs[0])
+	vna.setStartFreq(readout_fs[0])
+	vna.setStopFreq(readout_fs[0])
+	for i in range(10):
+		f,r,im = vna.getData()
+	dt = time.time() - begin # seconds
+	time_per_read = dt / 10 / 60 # minutes
+	total_iterations = readout_powers.size*aux_powers.size*aux_fs.size*readout_fs.size
+	total_time = np.round(time_per_read*total_iterations,2) # min
 
-	baselineRe = np.zeros((readout_powers.size,readout_fs.size))
-	baselineIm = np.zeros((readout_powers.size,readout_fs.size))	
+	# start taking data!
 
-	for h,p in enumerate(readout_powers):
+	dataRe = np.zeros((readout_fs.size, readout_powers.size, aux_fs.size, aux_powers.size))
+	dataIm = np.zeros((readout_fs.size, readout_powers.size, aux_fs.size, aux_powers.size))
+
+	baselineRe = np.zeros((readout_fs.size,readout_powers.size))
+	baselineIm = np.zeros((readout_fs.size,readout_powers.size))
+
+	for j,p in enumerate(readout_powers):
 		vna.setPower(p)
 
 		vnaAux.enable()
 		vna.setNPoints(avg_cnt)
 
-		for g,pq in enumerate(aux_powers):
+		for i,pq in enumerate(aux_powers):
 			vnaAux.setPower(pq)
 
-			for i,aux_f in enumerate(aux_fs):
+			for k,aux_f in enumerate(aux_fs):
 				vnaAux.setCWFreq(aux_f)
 
-				for j,read_f in enumerate(readout_fs):
-					print(f"Readout power {h+1}/{readout_powers.size}, aux power {g+1}/{aux_powers.size}, pump freq {i+1}/{aux_fs.size}, readout freq {j+1}/{readout_fs.size} | pq: {pq}, fq: {aux_f}, pr: {p}, fr: {read_f}")
+				for l,read_f in enumerate(readout_fs):
+					iteration = l+k*readout_fs.size+i*aux_fs.size*readout_fs.size+j*aux_powers.size*aux_fs.size*readout_fs.size
+					#print(f"Remaining time (mins): {np.round(iteration*time_per_read,2)}/{total_time} | readout freq {l+1}/{readout_fs.size} readout power {j+1}/{readout_powers.size}, aux freq {k+1}/{aux_fs.size}, aux power {i+1}/{aux_powers.size}  | pq: {pq}, fq: {aux_f}, pr: {p}, fr: {read_f}")
+					print(f"Remaining time (mins): {np.round(iteration*time_per_read,2)}/{total_time} | pq: {pq}, fq: {aux_f}, pr: {p}, fr: {read_f}")
 					vna.setStartFreq(read_f)
 					vna.setStopFreq(read_f)
 
 					f,r,im = vna.getData()
-					dataRe[i,h,j] += np.mean(r)
-					dataIm[i,h,j] += np.mean(im)
+					dataRe[l,j,k,i] += np.mean(r)
+					dataIm[l,j,k,i] += np.mean(im)
 
 		vnaAux.disable()
 		vna.setNPoints(baseline_avg_cnt)
 
-		for j,read_f in enumerate(readout_fs):
-			print(f"Baseline for readout power {h+1}/{readout_powers.size} readout freq {j+1}/{readout_fs.size} | Readout power: {p}, Readout freq: {read_f}")
+		for l,read_f in enumerate(readout_fs):
+			print(f"Baseline for readout power {j+1}/{readout_powers.size} readout freq {l+1}/{readout_fs.size} | Readout power: {p}, Readout freq: {read_f}")
 			vna.setStartFreq(read_f)
 			vna.setStopFreq(read_f)
 			
 			f,r,im = vna.getData()
-			baselineRe[h,j] += np.mean(r)
-			baselineIm[h,j] += np.mean(im)
+			baselineRe[l,j] += np.mean(r)
+			baselineIm[l,j] += np.mean(im)
 
 	# TODO make saving nice and save params too like the TWPA stuff
-	np.save(f"{data_dir}\\{tag}_Mag", dataRe)
-	np.save(f"{data_dir}\\{tag}_Phase", dataIm)
-	np.save(f"{data_dir}\\{tag}_baseline_Mag", baselineRe)
-	np.save(f"{data_dir}\\{tag}_baseline_Phase", baselineIm)
+	np.save(f"{data_dir}\\{tag}_Re", dataRe)
+	np.save(f"{data_dir}\\{tag}_Im", dataIm)
+	np.save(f"{data_dir}\\{tag}_baseline_Re", baselineRe)
+	np.save(f"{data_dir}\\{tag}_baseline_Im", baselineIm)
 	print("Data saved.")
 
 	twpa.turnOff()
@@ -226,13 +254,13 @@ def TwoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_av
 
 	vna.setIntTrigger()
 
-	#extent = [aux_fi, aux_ff,readout_powers[-1], readout_powers[0]]
-
 	print("Run finished successfully.")
-	
 
-	#plt.imshow(dataRe[:,:,0]-baselineRe[:,0], extent=extent, interpolation='none', aspect='auto')
-	#plt.show()
+	if plot:
+		extent = [aux_fs[0], aux_fs[-1],readout_fs[-1], readout_fs[0]]
+		plt.figure()
+		plt.title(f"{tag}, readout power {readout_powers[0]-readout_atten}, qubit power {aux_powers[0]-aux_atten}")
+		plt.imshow(dataRe[:,0,:,0]-baselineRe[:,0], extent=extent, interpolation='none', aspect='auto')
 
 def TwoToneBaselineOnly(VNA_fi, VNA_ff, npts, IFBW, readout_power, baseline_avg_cnt, twpa_freq, twpa_power, twpa_atten, aux_atten=10, readout_atten=10):
 	"""
@@ -312,7 +340,7 @@ def TwoToneBaselineOnly(VNA_fi, VNA_ff, npts, IFBW, readout_power, baseline_avg_
 
 if __name__ == "__main__":
 
-	data_dir="C:\\Users\\nexus\\Desktop\\Share\\Share\\Data\\2022-05-20"
+	data_dir="C:\\Users\\nexus\\Desktop\\Share\\Share\\Data\\2022-05-25"
 
 	pqi = -45
 	pqf = -25
@@ -324,43 +352,34 @@ if __name__ == "__main__":
 	prn = 1
 	prs = np.linspace(pri,prf,prn)
 
-	#TwoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_avg_cnt, IFBW, twpa_freq, twpa_power, twpa_atten, data_dir, tag, aux_port=2, aux_atten=10, readout_atten=10)
+	# args for reference:
+	#TwoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_avg_cnt, IFBW, twpa_freq, twpa_power, twpa_atten, data_dir, tag, aux_port=2, aux_atten=10, readout_atten=10, plot=True)
 
 	resonator_fs = [5.8275e9, 5.9588e9, 6.0745e9, 6.1875e9]
 	ground_states = [5.828473e9, 5.95938e9, 6.075066e9, 6.188073e9]
-	readout_span = 3e6
+	readout_span = 500e3
 	readout_nf = 51
 	qubit_transition_freqs = [4.65e9, 4.65e9, 4.8e9, 4.8e9]
-	qubit_span = 30e6
+	qubit_span = 20e6
 	qubit_nf = 151
-
-	hifi_S43_nf = 501
-	hifi_S43_navg = 1000
-	hifi_powers = np.array([0,-40])
-
-	# high fidelity S43 of qubits at high and low readout powers
-
-	vna = VNA.VNA()
-
-	for j,p in enumerate(hifi_powers):
-		vna.setPower(p)
-		print(f"power {p}"+" -"*30)
-		for i in range(len(resonator_fs)):
-			print(f"qubit {i+1}"+" -"*30)
-
-			tag = f"qubit_{i+1}_"
-			fs = np.linspace(resonator_fs[i]-readout_span, resonator_fs[i]+readout_span, hifi_S43_nf)
-			np.save(f"{data_dir}/{tag}cavity_spectroscopy_power_m{-p+20}_freq_{resonator_fs[i]}_pm{readout_span}.npy",AveragedS43(vna, fs, hifi_S43_navg))
 
 	# two tone scans
 
 	for i in range(len(resonator_fs)):
 		print(f"qubit {i+1}"+" -"*30)
 
-		tag = f"qubit_{i+1}_"
+		tag = f"qubit_{i+1}_pqs_scan"
 		
 		frs = np.linspace(ground_states[i]-readout_span, ground_states[i]+readout_span, readout_nf)
 		fqs = np.linspace(qubit_transition_freqs[i]-qubit_span, qubit_transition_freqs[i]+qubit_span, qubit_nf)
-		TwoTone(frs, prs, fqs, pqs, 100, 1000, 1e3, 9.4e9, 0, 8, data_dir, tag, aux_port=2, aux_atten=10, readout_atten=20)
+		twoTone(frs, prs, fqs, pqs, 100, 1000, 1e3, 9.4e9, 0, 8, data_dir, tag, aux_atten=10, readout_atten=20, plot=False)
 
-	plt.show()
+		tag = f"qubit_{i+1}_stark"
+
+		prn_stark = 30
+
+		frs_stark = np.array([ground_states[i]])
+		prs_stark = np.linspace(-55, -15, prn_stark)
+		fqs_stark = fqs
+		pqs_stark = np.array([-25])
+		twoTone(frs_stark, prs_stark, fqs_stark, pqs_stark, 100, 1000, 1e3, 9.4e9, 0, 8, data_dir, tag, aux_atten=10, readout_atten=20, plot=False)
