@@ -15,40 +15,56 @@ import matplotlib.pyplot as plt
 
 # all of this was done with VNA atten 10 dB
 
-def VNAPowerS21(center_f, f_width, npts, powers, average_count):
+def VNAPowerS21(vna, fs, powers, average_count):
 	"""
 	Scan S21 (or in our case actually S43) for several readout powers
 	and plot the resulting 2D heatmap.
 	"""
 
-	vna.setStartFreq(center_f-f_width)
-	vna.setStopFreq(center_f+f_width)
-	vna.setNPoints(npts)
-
 	vna.setFormat('mlog')
-
+	vna.setNPoints(average_count)
 	vna.setRFOn()
 
-	data = np.zeros((powers.size,npts))
+	data = np.zeros((powers.size,fs.size))
 
 	print('working')
 	for i,p in enumerate(powers):
 		print(p)
 		vna.setPower(p)
-		for j in range(average_count):
+		for j,f in enumerate(fs):
+			vna.setStartFreq(f)
+			vna.setStopFreq(f)
+			_,r,_ = vna.getData()
+			data[i,j] = np.mean(r)
 
-			f,r,_ = vna.getData()
-			data[i] += r
-		data[i] /= average_count
-
-
-	extent = [fc-fw, fc+fw, powers[0], powers[-1]]
+	plt.figure()
+	extent = [fs[0], fs[-1], powers[-1]-10, powers[0]-10] # 10 dB on atten
 	plt.imshow(data, extent=extent, aspect='auto', interpolation='none')
-
-	plt.show()
 
 	vna.setRFOff()
 	vna.setIntTrigger()
+
+	return data
+
+def AveragedS43(vna, fs, average_count):
+
+	vna.setFormat('mlog')
+	vna.setNPoints(average_count)
+	vna.setRFOn()
+
+	data = np.zeros((fs.size))
+
+	for i,f in enumerate(fs):
+		print(f"freq {i+1}/{fs.size}")
+		vna.setStartFreq(f)
+		vna.setStopFreq(f)
+		_,r,_ = vna.getData()
+		data[i] = np.mean(r)
+
+	vna.setRFOff()
+
+	return data
+
 
 def ScanAuxAtOneReadoutFreq(readout_f, avg_cnt, readout_power, aux_power, aux_fi, aux_ff, aux_npts, aux_port=2):
 	"""
@@ -94,7 +110,7 @@ def ScanAuxAtOneReadoutFreq(readout_f, avg_cnt, readout_power, aux_power, aux_fi
 	plt.plot(aux_fs,data[:,0].T)
 	plt.show()
 
-def TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW, aux_power, twpa_freq, twpa_power, twpa_atten, aux_port=2, aux_atten=10, readout_atten=10):
+def TwoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_avg_cnt, IFBW, twpa_freq, twpa_power, twpa_atten, data_dir, tag, aux_port=2, aux_atten=10, readout_atten=10):
 	"""
 	The measurement of S43 as a func of readout frequency, qubit freq, and readout power.
 	some sample values below.
@@ -128,6 +144,7 @@ def TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW,
 
 	twpa.connectAll()
 	twpa.setPump(twpa_freq,twpa_power,twpa_atten)
+	twpa.turnOn()
 	print("TWPA set to:")
 	print(twpa.getPump())
 
@@ -151,7 +168,6 @@ def TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW,
 
 	vnaAux = VNA.VNAAux()
 	vnaAux.setPort(aux_port)
-	vnaAux.setPower(aux_power)
 
 	vnaAux.enable()
 
@@ -159,7 +175,7 @@ def TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW,
 	dataIm = np.zeros((aux_fs.size,readout_powers.size,readout_fs.size))
 
 	baselineRe = np.zeros((readout_powers.size,readout_fs.size))
-	baselineIm = np.zeros((readout_powers.size,readout_fs.size))
+	baselineIm = np.zeros((readout_powers.size,readout_fs.size))	
 
 	for h,p in enumerate(readout_powers):
 		vna.setPower(p)
@@ -167,24 +183,26 @@ def TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW,
 		vnaAux.enable()
 		vna.setNPoints(avg_cnt)
 
-		for i,aux_f in enumerate(aux_fs):
-			vnaAux.setCWFreq(aux_f)
+		for g,pq in enumerate(aux_powers):
+			vnaAux.setPower(pq)
 
-			for j,read_f in enumerate(readout_fs):
-				print(f"(Superloop {h+1} of {readout_powers.size}) Qubit freq: {aux_f}, Readout power: {p}, Readout freq: {read_f}")
-				vna.setStartFreq(read_f)
-				vna.setStopFreq(read_f)
+			for i,aux_f in enumerate(aux_fs):
+				vnaAux.setCWFreq(aux_f)
 
-				f,r,im = vna.getData()
-				dataRe[i,h,j] += np.mean(r)
-				dataIm[i,h,j] += np.mean(im)
+				for j,read_f in enumerate(readout_fs):
+					print(f"Readout power {h+1}/{readout_powers.size}, aux power {g+1}/{aux_powers.size}, pump freq {i+1}/{aux_fs.size}, readout freq {j+1}/{readout_fs.size} | pq: {pq}, fq: {aux_f}, pr: {p}, fr: {read_f}")
+					vna.setStartFreq(read_f)
+					vna.setStopFreq(read_f)
+
+					f,r,im = vna.getData()
+					dataRe[i,h,j] += np.mean(r)
+					dataIm[i,h,j] += np.mean(im)
 
 		vnaAux.disable()
 		vna.setNPoints(baseline_avg_cnt)
 
-		print("Taking Baselines...")
 		for j,read_f in enumerate(readout_fs):
-			print(f"(Baselines for superloop {h+1} of {readout_powers.size}) Readout power: {p}, Readout freq: {read_f}")
+			print(f"Baseline for readout power {h+1}/{readout_powers.size} readout freq {j+1}/{readout_fs.size} | Readout power: {p}, Readout freq: {read_f}")
 			vna.setStartFreq(read_f)
 			vna.setStopFreq(read_f)
 			
@@ -192,6 +210,14 @@ def TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW,
 			baselineRe[h,j] += np.mean(r)
 			baselineIm[h,j] += np.mean(im)
 
+	# TODO make saving nice and save params too like the TWPA stuff
+	np.save(f"{data_dir}\\{tag}_Mag", dataRe)
+	np.save(f"{data_dir}\\{tag}_Phase", dataIm)
+	np.save(f"{data_dir}\\{tag}_baseline_Mag", baselineRe)
+	np.save(f"{data_dir}\\{tag}_baseline_Phase", baselineIm)
+	print("Data saved.")
+
+	twpa.turnOff()
 	twpa.disconnectAll()
 	four_port.set(1,95)
 	four_port.set(2,95)
@@ -202,13 +228,7 @@ def TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW,
 
 	#extent = [aux_fi, aux_ff,readout_powers[-1], readout_powers[0]]
 
-	# TODO make saving nice and save params too like the TWPA stuff
-	np.save("TTCW_scan_results_manypowers_Mag", dataRe)
-	np.save("TTCW_scan_results_manypowers_Phase", dataIm)
-	np.save("TTCW_scan_baseline_manypowers_Mag", baselineRe)
-	np.save("TTCW_scan_baseline_manypowers_Phase", baselineIm)
-
-	print("Data saved. Run finished successfully.")
+	print("Run finished successfully.")
 	
 
 	#plt.imshow(dataRe[:,:,0]-baselineRe[:,0], extent=extent, interpolation='none', aspect='auto')
@@ -289,20 +309,58 @@ def TwoToneBaselineOnly(VNA_fi, VNA_ff, npts, IFBW, readout_power, baseline_avg_
 	np.save("TTCW_scan_real_baseline_Mag", baselineRe)
 	np.save("TTCW_scan_real_baseline_Phase", baselineIm)
 
-fqi = 4.5e9
-fqf = 4.8e9
-fqn = 91
-fqs = np.linspace(fqi, fqf, fqn)
 
-pi = -55
-pf = -15
-pn = 13
-ps = np.linspace(pi,pf,pn)
+if __name__ == "__main__":
 
-fri = 5.82826e9
-frf = 5.82848e9
-frn = 7
-frs = np.linspace(fri, frf, frn)
+	data_dir="C:\\Users\\nexus\\Desktop\\Share\\Share\\Data\\2022-05-20"
 
-#TwoTone(readout_fs, readout_powers, aux_fs, avg_cnt, baseline_avg_cnt, IFBW, aux_power, twpa_freq, twpa_power, twpa_atten, aux_port=2, aux_atten=10, readout_atten=10)
-TwoTone(frs, ps, fqs, 100, 1000, 1e3, -25, 9.2e9, 0, 7, aux_port=2, aux_atten=10, readout_atten=20)
+	pqi = -45
+	pqf = -25
+	pqn = 3
+	pqs = np.linspace(pqi,pqf,pqn)
+
+	pri = -40
+	prf = -40
+	prn = 1
+	prs = np.linspace(pri,prf,prn)
+
+	#TwoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_avg_cnt, IFBW, twpa_freq, twpa_power, twpa_atten, data_dir, tag, aux_port=2, aux_atten=10, readout_atten=10)
+
+	resonator_fs = [5.8275e9, 5.9588e9, 6.0745e9, 6.1875e9]
+	ground_states = [5.828473e9, 5.95938e9, 6.075066e9, 6.188073e9]
+	readout_span = 3e6
+	readout_nf = 51
+	qubit_transition_freqs = [4.65e9, 4.65e9, 4.8e9, 4.8e9]
+	qubit_span = 30e6
+	qubit_nf = 151
+
+	hifi_S43_nf = 501
+	hifi_S43_navg = 1000
+	hifi_powers = np.array([0,-40])
+
+	# high fidelity S43 of qubits at high and low readout powers
+
+	vna = VNA.VNA()
+
+	for j,p in enumerate(hifi_powers):
+		vna.setPower(p)
+		print(f"power {p}"+" -"*30)
+		for i in range(len(resonator_fs)):
+			print(f"qubit {i+1}"+" -"*30)
+
+			tag = f"qubit_{i+1}_"
+			fs = np.linspace(resonator_fs[i]-readout_span, resonator_fs[i]+readout_span, hifi_S43_nf)
+			np.save(f"{data_dir}/{tag}cavity_spectroscopy_power_m{-p+20}_freq_{resonator_fs[i]}_pm{readout_span}.npy",AveragedS43(vna, fs, hifi_S43_navg))
+
+	# two tone scans
+
+	for i in range(len(resonator_fs)):
+		print(f"qubit {i+1}"+" -"*30)
+
+		tag = f"qubit_{i+1}_"
+		
+		frs = np.linspace(ground_states[i]-readout_span, ground_states[i]+readout_span, readout_nf)
+		fqs = np.linspace(qubit_transition_freqs[i]-qubit_span, qubit_transition_freqs[i]+qubit_span, qubit_nf)
+		TwoTone(frs, prs, fqs, pqs, 100, 1000, 1e3, 9.4e9, 0, 8, data_dir, tag, aux_port=2, aux_atten=10, readout_atten=20)
+
+	plt.show()

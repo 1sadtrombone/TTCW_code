@@ -1,12 +1,30 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-datadir = "C:\\Users\\tajdy\\Documents\\SLAC\\nexus_data\\2022-04-20"
+#datadir = "C:\\Users\\tajdy\\Documents\\SLAC\\nexus_data\\2022-04-20\\"
+#datadir="C:\\Users\\tajdy\\Documents\\SLAC\\nexus_data\\2022-05-25\\"
+datadir="C:\\Users\\tajdy\\Documents\\SLAC\\nexus_data\\forTaj\\"
+'''
+linmag = np.load(f"{datadir}TTCW_scan_results_manypowers_overnight_Mag.npy")
+linphase = np.load(f"{datadir}TTCW_scan_results_manypowers_overnight_Phase.npy")
+bl_linmag = np.load(f"{datadir}TTCW_scan_baseline_manypowers_overnight_Mag.npy")
+bl_linphase = np.load(f"{datadir}TTCW_scan_baseline_manypowers_overnight_Phase.npy")
+'''
+'''
+linmag = np.load(f"{datadir}debug_Mag.npy")
+linphase = np.load(f"{datadir}debug_Phase.npy")
+bl_linmag = np.load(f"{datadir}debug_baseline_Mag.npy")
+bl_linphase = np.load(f"{datadir}debug_baseline_Phase.npy")
+'''
 
-linmag = np.load(f"{datadir}\\TTCW_scan_results_manypowers_overnight_Mag.npy")
-linphase = np.load(f"{datadir}\\TTCW_scan_results_manypowers_overnight_Phase.npy")
-bl_linmag = np.load(f"{datadir}\\TTCW_scan_baseline_manypowers_overnight_Mag.npy")
-bl_linphase = np.load(f"{datadir}\\TTCW_scan_baseline_manypowers_overnight_Phase.npy")
+linmag = np.load(f"{datadir}qubit_1__Mag.npy")
+linphase = np.load(f"{datadir}qubit_1__Phase.npy")
+bl_linmag = np.load(f"{datadir}qubit_1__baseline_Mag.npy")
+bl_linphase = np.load(f"{datadir}qubit_1__baseline_Phase.npy")
+
+
+print(linmag.shape)
+print(bl_linmag.shape)
 
 # fq, pr, fr
 
@@ -20,11 +38,12 @@ aux_ff = 4.8
 dark = 5.8284046
 bright = 5.827832
 
-frs = np.linspace(VNA_fi, VNA_ff, 31)
+#frs = np.linspace(VNA_fi, VNA_ff, 31)
+frs = np.linspace(VNA_fi, VNA_ff, 5)
 
-dark_i = 20
+dark_i = 2
 
-ps = np.linspace(-55,-15,30) - 20
+ps = np.linspace(-75,-35,bl_linmag.shape[0])
 
 '''
 display = (linmag-bl_linmag)[:,:,dark_i]
@@ -42,21 +61,37 @@ cbar.set_label("S43 Magnitude (linear), baseline subtracted")
 plt.show()
 '''
 
-'''
-extent = [VNA_fi, VNA_ff, aux_ff, aux_fi]
-plt.imshow(np.log10(linmag), extent=extent,  aspect='auto', interpolation='none')
+ind = 0
+
+mag = np.sqrt(linmag**2+linphase**2)
+phase = np.arctan2(linmag, linphase)
+blmag = np.mean(np.sqrt(linmag**2+linphase**2)[:10], axis=0)
+blphase = np.mean(np.arctan2(linmag, linphase)[:10], axis=0)
+#blmag = np.sqrt(bl_linmag**2+bl_linphase**2)
+#blphase = np.arctan2(bl_linmag, bl_linphase)
+
+print(blmag[ind].shape)
 
 plt.figure()
-'''
-'''
+plt.title("bl subtracted")
+plt.imshow(mag[:,ind]-blmag[ind],  aspect='auto', interpolation='none', cmap="RdYlBu_r")
+plt.colorbar()
+plt.figure()
+plt.title("raw")
+plt.imshow(mag[:,ind],  aspect='auto', interpolation='none', cmap="RdYlBu_r")
+plt.colorbar()
+
+
 for i in range(ps.size):
-	plt.figure()
-	plt.title(f"{ps[i]} Baseline S43, Magnitude")
-	plt.ylabel("S43 (linear [uV?])")
-	plt.xlabel("Readout Frequency (GHz)")
-	plt.plot(np.linspace(VNA_fi,VNA_ff,bl_linmag.shape[1]), bl_linmag[i])
+	if i == ind:
+		plt.figure()
+		plt.title(f"Baseline S43, Magnitude")
+		plt.ylabel("S43 (linear [uV?])")
+		plt.xlabel("Readout Frequency (GHz)")
+		plt.plot(10*np.log10(blmag[i]))
 	
 
+'''
 plt.figure()
 plt.title(f"Baseline S43, Magnitude")
 plt.ylabel("Readout Power (dBm)")
@@ -65,12 +100,10 @@ extent = [VNA_fi, VNA_ff, ps[-1], ps[0]]
 for i in range(ps.size):
 	bl_linmag[:i]*=1e3
 plt.imshow(bl_linmag, extent=extent, interpolation='none', aspect='auto')
-
-plt.show()
-
-exit()
 '''
 
+
+'''
 
 for i in range(ps.size):
 	plt.figure()
@@ -89,4 +122,7 @@ for i in range(ps.size):
 	plt.imshow(display, extent=extent, interpolation='none', aspect='auto', cmap="RdYlBu_r", vmin=-extreme, vmax=extreme)
 	cbar = plt.colorbar()
 	cbar.set_label("S43 Magnitude (linear), baseline subtracted")
+'''
 plt.show()
+
+exit()

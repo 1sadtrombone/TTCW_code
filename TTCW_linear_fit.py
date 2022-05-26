@@ -27,7 +27,7 @@ dark = 5.8284046
 bright = 5.827832
 
 frs = np.linspace(VNA_fi, VNA_ff, 31)
-fqs = np.linspace(aux_fi, aux_ff, linmag.shape[0])
+fqs = np.linspace(aux_fi, aux_ff, linmag.shape[0]) # GHz
 
 dark_i = 20
 
@@ -41,6 +41,7 @@ fit_end = 23 # power index where the peak gets driven normal
 
 peak_fqs = np.zeros(fit_end-fit_start)
 peak_linps = np.zeros(fit_end-fit_start)
+hwhms = 0*peak_linps
 
 for i,j in enumerate(range(fit_start,fit_end)):
 
@@ -69,18 +70,23 @@ for i,j in enumerate(range(fit_start,fit_end)):
 	popt, cov = curve_fit(lorentzian, fqs[minrange:maxrange], data[minrange:maxrange], p0=[fqs[center], 1e-3, 1e-3], bounds=([minf,1e-4,1e-4],[maxf,1e-2,5e-2]))
 	
 	peak_fqs[i] = popt[0]
+	hwhms[i] = popt[2]
 
 	# get Q eventually
 
 	'''
-	plt.figure()
+	plt.figure(figsize=(10,5))
 	plt.plot(fqs,data)
 	plt.plot(fqs,np.ones_like(data)*median+margin, 'k--')
 	plt.plot((fqs[minrange],fqs[maxrange]),(data[minrange], data[maxrange]),'r.')
 	plt.plot(fqs, lorentzian(fqs, *popt))
 	plt.plot(fqs[center], data[center], 'b.')
+	plt.xlabel("Qubit Frequency (GHz)")
+	plt.ylabel("S43")
+	plt.title(f"Readout Power: {peak_linps[i]} mW")
 	plt.show()
 	'''
+	
 
 # N_gamma - power calibration
 
@@ -105,6 +111,13 @@ print(f"photons per mW: {N_gamma_slope}")
 print(f"mW for one photon: {1/N_gamma_slope}")
 print(f"dBm for one photon: {10*np.log10(1/N_gamma_slope)}")
 
+# Getting Q
+
+fwhms = 2*hwhms
+Qs = peak_fqs/fwhms
+
+# display
+
 plt.figure()
 display = (linmag-bl_linmag)[:,:,dark_i]
 
@@ -128,5 +141,17 @@ plt.title("AC Stark Shift")
 plt.xlabel("Number of Photons")
 plt.ylabel("Qubit Pump Frequency (GHz)")
 plt.legend()
+
+plt.figure()
+plt.semilogx(N_gamma_slope*peak_linps, fwhms, 'ko-')
+plt.title("Linewidth Dependence")
+plt.xlabel("Number of Photons")
+plt.ylabel("Lorentzian Linewidth [FWHM] (GHz)")
+
+plt.figure()
+plt.semilogx(N_gamma_slope*peak_linps, Qs, 'ko-')
+plt.title("Quality Factor Dependence")
+plt.xlabel("Number of Photons")
+plt.ylabel("Q")
 
 plt.show()
