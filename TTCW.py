@@ -122,6 +122,8 @@ def twoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_av
 	The indices of the main result are [fr, pr, fq, pq]
 	The indices of the baseline scan are [fr, pr]
 	(the baseline is a higher avg count scan with qubit pump off)
+
+	THE freq AND power ARRAYS MUST BE NPARRAYS OF FLOATS
 	"""
 
 	if not os.path.exists(data_dir):
@@ -251,7 +253,6 @@ def twoTone(readout_fs, readout_powers, aux_fs, aux_powers, avg_cnt, baseline_av
 	four_port.set(2,95)
 	vna.setRFOff()
 
-
 	vna.setIntTrigger()
 
 	print("Run finished successfully.")
@@ -340,7 +341,7 @@ def TwoToneBaselineOnly(VNA_fi, VNA_ff, npts, IFBW, readout_power, baseline_avg_
 
 if __name__ == "__main__":
 
-	data_dir="C:\\Users\\nexus\\Desktop\\Share\\Share\\Data\\2022-05-25"
+	data_dir="C:\\Users\\nexus\\Desktop\\Share\\Share\\Data\\2022-05-26"
 
 	pqi = -45
 	pqf = -25
@@ -375,11 +376,11 @@ if __name__ == "__main__":
 		twoTone(frs, prs, fqs, pqs, 100, 1000, 1e3, 9.4e9, 0, 8, data_dir, tag, aux_atten=10, readout_atten=20, plot=False)
 
 		tag = f"qubit_{i+1}_stark"
-
+		
 		prn_stark = 30
 
 		frs_stark = np.array([ground_states[i]])
 		prs_stark = np.linspace(-55, -15, prn_stark)
 		fqs_stark = fqs
-		pqs_stark = np.array([-25])
+		pqs_stark = np.array([-25.])
 		twoTone(frs_stark, prs_stark, fqs_stark, pqs_stark, 100, 1000, 1e3, 9.4e9, 0, 8, data_dir, tag, aux_atten=10, readout_atten=20, plot=False)
