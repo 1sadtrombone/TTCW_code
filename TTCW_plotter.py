@@ -1,128 +1,101 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-#datadir = "C:\\Users\\tajdy\\Documents\\SLAC\\nexus_data\\2022-04-20\\"
-#datadir="C:\\Users\\tajdy\\Documents\\SLAC\\nexus_data\\2022-05-25\\"
-datadir="C:\\Users\\tajdy\\Documents\\SLAC\\nexus_data\\forTaj\\"
-'''
-linmag = np.load(f"{datadir}TTCW_scan_results_manypowers_overnight_Mag.npy")
-linphase = np.load(f"{datadir}TTCW_scan_results_manypowers_overnight_Phase.npy")
-bl_linmag = np.load(f"{datadir}TTCW_scan_baseline_manypowers_overnight_Mag.npy")
-bl_linphase = np.load(f"{datadir}TTCW_scan_baseline_manypowers_overnight_Phase.npy")
-'''
-'''
-linmag = np.load(f"{datadir}debug_Mag.npy")
-linphase = np.load(f"{datadir}debug_Phase.npy")
-bl_linmag = np.load(f"{datadir}debug_baseline_Mag.npy")
-bl_linphase = np.load(f"{datadir}debug_baseline_Phase.npy")
-'''
+import json
 
-linmag = np.load(f"{datadir}qubit_1__Mag.npy")
-linphase = np.load(f"{datadir}qubit_1__Phase.npy")
-bl_linmag = np.load(f"{datadir}qubit_1__baseline_Mag.npy")
-bl_linphase = np.load(f"{datadir}qubit_1__baseline_Phase.npy")
+def readData(datadir, tag, magphase=False):
+	'''
+	Read data and metadata json in directory datadir with prefix tag.
+	'''
 
+	# before I thought polar mode returned mag/phase, so that's how I named it
+	# but it's always re/im
 
-print(linmag.shape)
-print(bl_linmag.shape)
+	if magphase:
+		linRe = np.load(f"{datadir}{tag}_Mag.npy")
+		linIm = np.load(f"{datadir}{tag}_Phase.npy")
+		bl_linRe = np.load(f"{datadir}{tag}_baseline_Mag.npy")
+		bl_linIm = np.load(f"{datadir}{tag}_baseline_Phase.npy")
+		
+	else:
+		linRe = np.load(f"{datadir}{tag}_Re.npy")
+		linIm = np.load(f"{datadir}{tag}_Im.npy")
+		bl_linRe = np.load(f"{datadir}{tag}_baseline_Re.npy")
+		bl_linIm = np.load(f"{datadir}{tag}_baseline_Im.npy")
 
-# fq, pr, fr
+	with open(f"{datadir}{tag}_metadata.json") as paramfile:
+		prm = json.load(paramfile)
 
-# taken from the script
-# TODO implement some kind of parameter saving like for the TWPA
-VNA_fi = 5.82826
-VNA_ff = 5.82848
-aux_fi = 4.5
-aux_ff = 4.8
+	return linRe, linIm, bl_linRe, bl_linIm, prm
 
-dark = 5.8284046
-bright = 5.827832
+	# fr, pr, fq, pq
 
-#frs = np.linspace(VNA_fi, VNA_ff, 31)
-frs = np.linspace(VNA_fi, VNA_ff, 5)
+def plotTwoTone(datadir, tag, magphase=False):
+	'''
+	Expecting the data it reads to be a full data cube, shape fr, pr, fq, pq
+	Plots the full cube, making a colormap of fr and fq for each combination of reaodut and qubit powers
+	'''
 
-dark_i = 2
+	linRe, linIm, bl_linRe, bl_linIm, prm = readData(datadir, tag, magphase)
+	mag = np.sqrt(linRe**2+linIm**2)
+	blmag = np.sqrt(bl_linRe**2+bl_linIm**2)
 
-ps = np.linspace(-75,-35,bl_linmag.shape[0])
+	fri = np.min(prm["frs"])*1e-9
+	frf = np.max(prm["frs"])*1e-9
+	fqi = np.min(prm["fqs"])*1e-9
+	fqf = np.max(prm["fqs"])*1e-9
 
-'''
-display = (linmag-bl_linmag)[:,:,dark_i]
+	for i,pr in enumerate(prm["prs"]):
+		for j,pq in enumerate(prm["pqs"]):
+			display = mag[:,i,:,j].T-blmag[:,i]
+			extent = [frf, fri, fqi, fqf]
+			extreme = np.max((np.max(display), -np.min(display)))
+			plt.figure()
+			plt.title(f"IFBW: {prm['IFBW']}, {prm['avg_cnt']} avg count, \nReadout Power: {pr-prm['readout_atten']} dBm, Qubit Power: {pq-prm['aux_atten']} dBm")
+			plt.imshow(display, extent=extent, interpolation='none', aspect='auto', cmap="RdYlBu_r", vmin=-extreme, vmax=extreme)
+			cbar = plt.colorbar()
+			cbar.set_label("S43 Magnitude (linear), baseline subtracted")
+			plt.ylabel("Qubit Pump Frequency (GHz)")
+			plt.xlabel("Readout Frequency (GHz)")
 
-extent = [ps[0], ps[-1], aux_ff, aux_fi]
-extreme = np.max((np.max(display), -np.min(display)))
+def plotStarkShift(datadir, tag, magphase=False):
+	'''
+	Expecting to read data with a single qubit power and readout frequency. 
+	Plots qubit frequency vs readout power. 
+	'''
 
-plt.xlabel("Readout Power at Feedthrough (dBm)")
-plt.ylabel("Qubit Pump Frequency (GHz)")
-plt.title(f"IFBW: 1 kHz, 100 avg count, \nReadout Freq: {np.round(frs[dark_i],6)} GHz (dark state), Qubit Power: -35 dBm")
+	linRe, linIm, bl_linRe, bl_linIm, prm = readData(datadir, tag, magphase)
+	mag = np.sqrt(linRe**2+linIm**2)
+	blmag = np.sqrt(bl_linRe**2+bl_linIm**2)
 
-plt.imshow(display, extent=extent, interpolation='none', aspect='auto', cmap="RdYlBu_r", vmin=-extreme, vmax=extreme)
-cbar = plt.colorbar()
-cbar.set_label("S43 Magnitude (linear), baseline subtracted")
-plt.show()
-'''
+	pri = np.min(prm["prs"]) - prm["readout_atten"]
+	prf = np.max(prm["prs"]) - prm["readout_atten"]
+	fqi = np.min(prm["fqs"])*1e-9
+	fqf = np.max(prm["fqs"])*1e-9
+	fr = prm["frs"][0]*1e-9
 
-ind = 0
+	display = mag[0,:,:,0].T-blmag[0,:]
 
-mag = np.sqrt(linmag**2+linphase**2)
-phase = np.arctan2(linmag, linphase)
-blmag = np.mean(np.sqrt(linmag**2+linphase**2)[:10], axis=0)
-blphase = np.mean(np.arctan2(linmag, linphase)[:10], axis=0)
-#blmag = np.sqrt(bl_linmag**2+bl_linphase**2)
-#blphase = np.arctan2(bl_linmag, bl_linphase)
-
-print(blmag[ind].shape)
-
-plt.figure()
-plt.title("bl subtracted")
-plt.imshow(mag[:,ind]-blmag[ind],  aspect='auto', interpolation='none', cmap="RdYlBu_r")
-plt.colorbar()
-plt.figure()
-plt.title("raw")
-plt.imshow(mag[:,ind],  aspect='auto', interpolation='none', cmap="RdYlBu_r")
-plt.colorbar()
-
-
-for i in range(ps.size):
-	if i == ind:
-		plt.figure()
-		plt.title(f"Baseline S43, Magnitude")
-		plt.ylabel("S43 (linear [uV?])")
-		plt.xlabel("Readout Frequency (GHz)")
-		plt.plot(10*np.log10(blmag[i]))
-	
-
-'''
-plt.figure()
-plt.title(f"Baseline S43, Magnitude")
-plt.ylabel("Readout Power (dBm)")
-plt.xlabel("Readout Frequency (GHz)")
-extent = [VNA_fi, VNA_ff, ps[-1], ps[0]]
-for i in range(ps.size):
-	bl_linmag[:i]*=1e3
-plt.imshow(bl_linmag, extent=extent, interpolation='none', aspect='auto')
-'''
-
-
-'''
-
-for i in range(ps.size):
-	plt.figure()
-	display = linmag[:,i] - bl_linmag[i]
-
-	extent = [VNA_fi, VNA_ff, aux_ff, aux_fi]
+	extent = [pri, prf, fqi, fqf]
 	extreme = np.max((np.max(display), -np.min(display)))
 
-	plt.xlabel("Readout Frequency (GHz)")
-	plt.ylabel("Qubit Pump Frequency (GHz)")
-	plt.title(f"IFBW: 1 kHz, 100 avg count, \npowers (at feedthrough): Readout: {np.round(ps[i],2)} dBm, Pump: -35 dBm")
-
-	plt.plot(np.ones(2)*bright, (aux_fi, aux_ff), 'r--')
-	plt.plot(np.ones(2)*dark, (aux_fi, aux_ff), 'b--')
-
+	plt.figure()
+	plt.title(f"IFBW: {prm['IFBW']}, {prm['avg_cnt']} avg count, \nReadout Frequency: {fr} GHz, Qubit Power: {prm['pqs'][0]-prm['aux_atten']} dBm")
 	plt.imshow(display, extent=extent, interpolation='none', aspect='auto', cmap="RdYlBu_r", vmin=-extreme, vmax=extreme)
 	cbar = plt.colorbar()
 	cbar.set_label("S43 Magnitude (linear), baseline subtracted")
-'''
-plt.show()
+	plt.ylabel("Qubit Pump Frequency (GHz)")
+	plt.xlabel("Readout Power (dBm)")
 
-exit()
+if __name__=="__main__":
+
+	datadir="C:\\Users\\tajdy\\Documents\\SLAC\\nexus_data\\2022-05-26\\"
+	for i in range(4):
+
+		#tag = f"qubit_{i+1}_pqs_scan"
+		#plotTwoTone(datadir, tag)
+
+		tag = f"qubit_{i+1}_stark"
+		plotStarkShift(datadir, tag)
+
+	plt.show()
