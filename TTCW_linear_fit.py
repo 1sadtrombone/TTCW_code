@@ -84,7 +84,6 @@ for q in range(4):
 
 	resonator_ground_f = 5.8284046e9 # Hz
 	resonator_excited_f = 5.827832e9 
-	resonator_highp_f = 5.8277055e9 
 
 	peak_fqs_Hz = peak_fqs*1e9 # EVERYTHING must be in Hz
 
